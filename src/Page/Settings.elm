@@ -17,6 +17,7 @@ import Log
 import Profile exposing (Profile)
 import Route
 import Session exposing (Session)
+import Step exposing (Step)
 import Task
 import Username as Username exposing (Username)
 import Viewer exposing (Viewer)
@@ -218,31 +219,26 @@ type Msg
     | PassedSlowLoadThreshold
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         CompletedFormLoad (Ok form) ->
-            ( { model | status = Loaded form }
-            , Cmd.none
-            )
+            Step.to { model | status = Loaded form }
 
         CompletedFormLoad (Err _) ->
-            ( { model | status = Failed }
-            , Cmd.none
-            )
+            Step.to { model | status = Failed }
 
         SubmittedForm cred form ->
             case validate form of
                 Ok validForm ->
-                    ( { model | status = Loaded form }
-                    , edit cred validForm
-                        |> Http.send CompletedSave
-                    )
+                    Step.to { model | status = Loaded form }
+                        |> Step.command
+                            (edit cred validForm
+                                |> Http.send CompletedSave
+                            )
 
                 Err problems ->
-                    ( { model | problems = problems }
-                    , Cmd.none
-                    )
+                    Step.to { model | problems = problems }
 
         EnteredEmail email ->
             updateForm (\form -> { form | email = email }) model
@@ -265,42 +261,37 @@ update msg model =
                     Api.decodeErrors error
                         |> List.map ServerError
             in
-            ( { model | problems = List.append model.problems serverErrors }
-            , Cmd.none
-            )
+            Step.to { model | problems = List.append model.problems serverErrors }
 
         CompletedSave (Ok viewer) ->
-            ( model
-            , Viewer.store viewer
-            )
+            Step.to model
+                |> Step.command (Viewer.store viewer)
 
         GotSession session ->
-            ( { model | session = session }
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to { model | session = session }
+                |> Step.command
+                    (Route.replaceUrl (Session.navKey session) Route.Home)
 
         PassedSlowLoadThreshold ->
             case model.status of
                 Loading ->
-                    ( { model | status = LoadingSlowly }
-                    , Cmd.none
-                    )
+                    Step.to { model | status = LoadingSlowly }
 
                 _ ->
-                    ( model, Cmd.none )
+                    Step.stay
 
 
 {-| Helper function for `update`. Updates the form and returns Cmd.none.
 Useful for recording form fields!
 -}
-updateForm : (Form -> Form) -> Model -> ( Model, Cmd msg )
+updateForm : (Form -> Form) -> Model -> Step Model msg a
 updateForm transform model =
     case model.status of
         Loaded form ->
-            ( { model | status = Loaded (transform form) }, Cmd.none )
+            Step.to { model | status = Loaded (transform form) }
 
         _ ->
-            ( model, Log.error )
+            Step.to model |> Step.command Log.error
 
 
 

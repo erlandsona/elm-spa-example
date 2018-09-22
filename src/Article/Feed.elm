@@ -17,6 +17,7 @@ import PaginatedList exposing (PaginatedList)
 import Profile
 import Route exposing (Route)
 import Session exposing (Session)
+import Step exposing (Step)
 import Task exposing (Task)
 import Time
 import Timestamp
@@ -217,27 +218,24 @@ type Msg
     | CompletedFavorite (Result Http.Error (Article Preview))
 
 
-update : Maybe Cred -> Msg -> Model -> ( Model, Cmd Msg )
+update : Maybe Cred -> Msg -> Model -> Step Model Msg x
 update maybeCred msg (Model model) =
-    case msg of
-        ClickedDismissErrors ->
-            ( Model { model | errors = [] }, Cmd.none )
+    Step.map Model <|
+        case msg of
+            ClickedDismissErrors ->
+                Step.to { model | errors = [] }
 
-        ClickedFavorite cred slug ->
-            fave Article.favorite cred slug model
+            ClickedFavorite cred slug ->
+                fave Article.favorite cred slug model
 
-        ClickedUnfavorite cred slug ->
-            fave Article.unfavorite cred slug model
+            ClickedUnfavorite cred slug ->
+                fave Article.unfavorite cred slug model
 
-        CompletedFavorite (Ok article) ->
-            ( Model { model | articles = PaginatedList.map (replaceArticle article) model.articles }
-            , Cmd.none
-            )
+            CompletedFavorite (Ok article) ->
+                Step.to { model | articles = PaginatedList.map (replaceArticle article) model.articles }
 
-        CompletedFavorite (Err error) ->
-            ( Model { model | errors = Api.addServerError model.errors }
-            , Cmd.none
-            )
+            CompletedFavorite (Err error) ->
+                Step.to { model | errors = Api.addServerError model.errors }
 
 
 replaceArticle : Article a -> Article a -> Article a
@@ -270,10 +268,8 @@ pageCountDecoder resultsPerPage =
 -- INTERNAL
 
 
-fave : (Slug -> Cred -> Http.Request (Article Preview)) -> Cred -> Slug -> Internals -> ( Model, Cmd Msg )
+fave : (Slug -> Cred -> Http.Request (Article Preview)) -> Cred -> Slug -> Internals -> Step Internals Msg a
 fave toRequest cred slug model =
-    ( Model model
-    , toRequest slug cred
-        |> Http.toTask
-        |> Task.attempt CompletedFavorite
-    )
+    Step.to model
+        |> Step.withAttempt CompletedFavorite
+            (Http.toTask (toRequest slug cred))

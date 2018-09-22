@@ -24,6 +24,7 @@ import Page
 import Profile exposing (Profile)
 import Route
 import Session exposing (Session)
+import Step exposing (Step)
 import Task exposing (Task)
 import Time
 import Timestamp
@@ -329,64 +330,65 @@ type Msg
     | PassedSlowLoadThreshold
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         ClickedDismissErrors ->
-            ( { model | errors = [] }, Cmd.none )
+            Step.to { model | errors = [] }
 
         ClickedFavorite cred slug body ->
-            ( model, fave Article.favorite cred slug body )
+            Step.to model |> Step.command (fave Article.favorite cred slug body)
 
         ClickedUnfavorite cred slug body ->
-            ( model, fave Article.unfavorite cred slug body )
+            Step.to model |> Step.command (fave Article.unfavorite cred slug body)
 
         CompletedLoadArticle (Ok article) ->
-            ( { model | article = Loaded article }, Cmd.none )
+            Step.to { model | article = Loaded article }
 
         CompletedLoadArticle (Err error) ->
-            ( { model | article = Failed }
-            , Log.error
-            )
+            Step.to { model | article = Failed }
+                |> Step.command Log.error
 
         CompletedLoadComments (Ok comments) ->
-            ( { model | comments = Loaded ( Editing "", comments ) }, Cmd.none )
+            Step.to { model | comments = Loaded ( Editing "", comments ) }
 
         CompletedLoadComments (Err error) ->
-            ( { model | article = Failed }, Log.error )
+            Step.to { model | article = Failed }
+                |> Step.command Log.error
 
         CompletedFavoriteChange (Ok newArticle) ->
-            ( { model | article = Loaded newArticle }, Cmd.none )
+            Step.to { model | article = Loaded newArticle }
 
         CompletedFavoriteChange (Err error) ->
-            ( { model | errors = Api.addServerError model.errors }
-            , Log.error
-            )
+            Step.to { model | errors = Api.addServerError model.errors }
+                |> Step.command Log.error
 
         ClickedUnfollow cred followedAuthor ->
-            ( model
-            , Author.requestUnfollow followedAuthor cred
-                |> Http.send CompletedFollowChange
-            )
+            Step.to model
+                |> Step.command
+                    (Author.requestUnfollow followedAuthor cred
+                        |> Http.send CompletedFollowChange
+                    )
 
         ClickedFollow cred unfollowedAuthor ->
-            ( model
-            , Author.requestFollow unfollowedAuthor cred
-                |> Http.send CompletedFollowChange
-            )
+            Step.to model
+                |> Step.command
+                    (Author.requestFollow unfollowedAuthor cred
+                        |> Http.send CompletedFollowChange
+                    )
 
         CompletedFollowChange (Ok newAuthor) ->
             case model.article of
                 Loaded article ->
-                    ( { model | article = Loaded (Article.mapAuthor (\_ -> newAuthor) article) }, Cmd.none )
+                    Step.to { model | article = Loaded (Article.mapAuthor (\_ -> newAuthor) article) }
 
                 _ ->
-                    ( model, Log.error )
+                    Step.to model
+                        |> Step.command Log.error
 
         CompletedFollowChange (Err error) ->
-            ( { model | errors = Api.addServerError model.errors }
-            , Log.error
-            )
+            Step.to { model | errors = Api.addServerError model.errors }
+                |> Step.command Log.error
 
         EnteredCommentText str ->
             case model.comments of
@@ -394,12 +396,10 @@ update msg model =
                     -- You can only edit comment text once comments have loaded
                     -- successfully, and when the comment is not currently
                     -- being submitted.
-                    ( { model | comments = Loaded ( Editing str, comments ) }
-                    , Cmd.none
-                    )
+                    Step.to { model | comments = Loaded ( Editing str, comments ) }
 
                 _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         ClickedPostComment cred slug ->
             case model.comments of
@@ -407,79 +407,74 @@ update msg model =
                     -- No posting empty comments!
                     -- We don't use Log.error here because this isn't an error,
                     -- it just doesn't do anything.
-                    ( model, Cmd.none )
+                    Step.stay
 
                 Loaded ( Editing str, comments ) ->
-                    ( { model | comments = Loaded ( Sending str, comments ) }
-                    , cred
-                        |> Comment.post slug str
-                        |> Http.send CompletedPostComment
-                    )
+                    Step.to { model | comments = Loaded ( Sending str, comments ) }
+                        |> Step.command
+                            (cred
+                                |> Comment.post slug str
+                                |> Http.send CompletedPostComment
+                            )
 
                 _ ->
                     -- Either we have no comment to post, or there's already
                     -- one in the process of being posted, or we don't have
                     -- a valid article, in which case how did we post this?
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         CompletedPostComment (Ok comment) ->
             case model.comments of
                 Loaded ( _, comments ) ->
-                    ( { model | comments = Loaded ( Editing "", comment :: comments ) }
-                    , Cmd.none
-                    )
+                    Step.to { model | comments = Loaded ( Editing "", comment :: comments ) }
 
                 _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         CompletedPostComment (Err error) ->
-            ( { model | errors = Api.addServerError model.errors }
-            , Log.error
-            )
+            Step.to { model | errors = Api.addServerError model.errors } |> Step.command Log.error
 
         ClickedDeleteComment cred slug id ->
-            ( model
-            , cred
-                |> Comment.delete slug id
-                |> Http.send (CompletedDeleteComment id)
-            )
+            Step.to model
+                |> Step.command
+                    (cred
+                        |> Comment.delete slug id
+                        |> Http.send (CompletedDeleteComment id)
+                    )
 
         CompletedDeleteComment id (Ok ()) ->
             case model.comments of
                 Loaded ( commentText, comments ) ->
-                    ( { model | comments = Loaded ( commentText, withoutComment id comments ) }
-                    , Cmd.none
-                    )
+                    Step.to { model | comments = Loaded ( commentText, withoutComment id comments ) }
 
                 _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         CompletedDeleteComment id (Err error) ->
-            ( { model | errors = Api.addServerError model.errors }
-            , Log.error
-            )
+            Step.to { model | errors = Api.addServerError model.errors }
+                |> Step.command Log.error
 
         ClickedDeleteArticle cred slug ->
-            ( model
-            , delete slug cred
-                |> Http.send CompletedDeleteArticle
-            )
+            Step.to model
+                |> Step.command
+                    (delete slug cred
+                        |> Http.send CompletedDeleteArticle
+                    )
 
         CompletedDeleteArticle (Ok ()) ->
-            ( model, Route.replaceUrl (Session.navKey model.session) Route.Home )
+            Step.to model |> Step.command (Route.replaceUrl (Session.navKey model.session) Route.Home)
 
         CompletedDeleteArticle (Err error) ->
-            ( { model | errors = Api.addServerError model.errors }
-            , Log.error
-            )
+            Step.to { model | errors = Api.addServerError model.errors }
+                |> Step.command Log.error
 
         GotTimeZone tz ->
-            ( { model | timeZone = tz }, Cmd.none )
+            Step.to { model | timeZone = tz }
 
         GotSession session ->
-            ( { model | session = session }
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to { model | session = session }
+                |> Step.command
+                    (Route.replaceUrl (Session.navKey session) Route.Home)
 
         PassedSlowLoadThreshold ->
             let
@@ -501,7 +496,7 @@ update msg model =
                         other ->
                             other
             in
-            ( { model | article = article, comments = comments }, Cmd.none )
+            Step.to { model | article = article, comments = comments }
 
 
 

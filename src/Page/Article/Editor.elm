@@ -17,6 +17,7 @@ import Page
 import Profile exposing (Profile)
 import Route
 import Session exposing (Session)
+import Step exposing (Step)
 import Task exposing (Task)
 import Time
 
@@ -251,13 +252,13 @@ type Msg
     | PassedSlowLoadThreshold
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         ClickedSave cred ->
             model.status
                 |> save cred
-                |> Tuple.mapFirst (\status -> { model | status = status })
+                |> Step.map (\status -> { model | status = status })
 
         EnteredTitle title ->
             updateForm (\form -> { form | title = title }) model
@@ -272,31 +273,27 @@ update msg model =
             updateForm (\form -> { form | body = body }) model
 
         CompletedCreate (Ok article) ->
-            ( model
-            , Route.Article (Article.slug article)
-                |> Route.replaceUrl (Session.navKey model.session)
-            )
+            Step.to model
+                |> Step.command
+                    (Route.Article (Article.slug article)
+                        |> Route.replaceUrl (Session.navKey model.session)
+                    )
 
         CompletedCreate (Err error) ->
-            ( { model | status = savingError error model.status }
-            , Cmd.none
-            )
+            Step.to { model | status = savingError error model.status }
 
         CompletedEdit (Ok article) ->
-            ( model
-            , Route.Article (Article.slug article)
-                |> Route.replaceUrl (Session.navKey model.session)
-            )
+            Step.to model
+                |> Step.command
+                    (Route.Article (Article.slug article)
+                        |> Route.replaceUrl (Session.navKey model.session)
+                    )
 
         CompletedEdit (Err error) ->
-            ( { model | status = savingError error model.status }
-            , Cmd.none
-            )
+            Step.to { model | status = savingError error model.status }
 
         CompletedArticleLoad (Err ( slug, error )) ->
-            ( { model | status = LoadingFailed slug }
-            , Cmd.none
-            )
+            Step.to { model | status = LoadingFailed slug }
 
         CompletedArticleLoad (Ok article) ->
             let
@@ -312,14 +309,12 @@ update msg model =
                         , tags = String.join " " tags
                         }
             in
-            ( { model | status = status }
-            , Cmd.none
-            )
+            Step.to { model | status = status }
 
         GotSession session ->
-            ( { model | session = session }
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to { model | session = session }
+                |> Step.command
+                    (Route.replaceUrl (Session.navKey session) Route.Home)
 
         PassedSlowLoadThreshold ->
             let
@@ -333,37 +328,35 @@ update msg model =
                         other ->
                             other
             in
-            ( { model | status = status }, Cmd.none )
+            Step.to { model | status = status }
 
 
-save : Cred -> Status -> ( Status, Cmd Msg )
+save : Cred -> Status -> Step Status Msg a
 save cred status =
     case status of
         Editing slug _ form ->
             case validate form of
                 Ok validForm ->
-                    ( Saving slug form
-                    , edit slug validForm cred
-                        |> Http.send CompletedEdit
-                    )
+                    Step.to (Saving slug form)
+                        |> Step.command
+                            (edit slug validForm cred
+                                |> Http.send CompletedEdit
+                            )
 
                 Err problems ->
-                    ( Editing slug problems form
-                    , Cmd.none
-                    )
+                    Step.to (Editing slug problems form)
 
         EditingNew _ form ->
             case validate form of
                 Ok validForm ->
-                    ( Creating form
-                    , create validForm cred
-                        |> Http.send CompletedCreate
-                    )
+                    Step.to (Creating form)
+                        |> Step.command
+                            (create validForm cred
+                                |> Http.send CompletedCreate
+                            )
 
                 Err problems ->
-                    ( EditingNew problems form
-                    , Cmd.none
-                    )
+                    Step.to (EditingNew problems form)
 
         _ ->
             -- We're in a state where saving is not allowed.
@@ -372,7 +365,7 @@ save cred status =
             --
             -- If we had an error logging service, we would send
             -- something to it here!
-            ( status, Cmd.none )
+            Step.stay
 
 
 savingError : Http.Error -> Status -> Status
@@ -401,7 +394,7 @@ This could also log errors to the server if we are trying to record things in
 the form and we don't actually have a form.
 
 -}
-updateForm : (Form -> Form) -> Model -> ( Model, Cmd Msg )
+updateForm : (Form -> Form) -> Model -> Step Model Msg a
 updateForm transform model =
     let
         newModel =
@@ -427,7 +420,7 @@ updateForm transform model =
                 Creating form ->
                     { model | status = Creating (transform form) }
     in
-    ( newModel, Cmd.none )
+    Step.to newModel
 
 
 

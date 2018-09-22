@@ -18,6 +18,7 @@ import Log
 import Page
 import PaginatedList exposing (PaginatedList)
 import Session exposing (Session)
+import Step exposing (Step)
 import Task exposing (Task)
 import Time
 import Url.Builder
@@ -240,7 +241,7 @@ type Msg
     | PassedSlowLoadThreshold
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         ClickedTag tag ->
@@ -248,63 +249,53 @@ update msg model =
                 feedTab =
                     TagFeed tag
             in
-            ( { model | feedTab = feedTab }
-            , fetchFeed model.session feedTab 1
-                |> Task.attempt CompletedFeedLoad
-            )
+            Step.to { model | feedTab = feedTab }
+                |> Step.withAttempt CompletedFeedLoad (fetchFeed model.session feedTab 1)
 
         ClickedTab tab ->
-            ( { model | feedTab = tab }
-            , fetchFeed model.session tab 1
-                |> Task.attempt CompletedFeedLoad
-            )
+            Step.to { model | feedTab = tab }
+                |> Step.withAttempt CompletedFeedLoad (fetchFeed model.session tab 1)
 
         ClickedFeedPage page ->
-            ( { model | feedPage = page }
-            , fetchFeed model.session model.feedTab page
-                |> Task.andThen (\feed -> Task.map (\_ -> feed) scrollToTop)
-                |> Task.attempt CompletedFeedLoad
-            )
+            Step.to { model | feedPage = page }
+                |> Step.withAttempt CompletedFeedLoad
+                    (fetchFeed model.session model.feedTab page
+                        |> Task.andThen (\feed -> Task.map (\_ -> feed) scrollToTop)
+                    )
 
         CompletedFeedLoad (Ok feed) ->
-            ( { model | feed = Loaded feed }, Cmd.none )
+            Step.to { model | feed = Loaded feed }
 
         CompletedFeedLoad (Err error) ->
-            ( { model | feed = Failed }, Cmd.none )
+            Step.to { model | feed = Failed }
 
         CompletedTagsLoad (Ok tags) ->
-            ( { model | tags = Loaded tags }, Cmd.none )
+            Step.to { model | tags = Loaded tags }
 
         CompletedTagsLoad (Err error) ->
-            ( { model | tags = Failed }
-            , Log.error
-            )
+            Step.to { model | tags = Failed }
+                |> Step.command Log.error
 
         GotFeedMsg subMsg ->
             case model.feed of
                 Loaded feed ->
-                    let
-                        ( newFeed, subCmd ) =
-                            Feed.update (Session.cred model.session) subMsg feed
-                    in
-                    ( { model | feed = Loaded newFeed }
-                    , Cmd.map GotFeedMsg subCmd
-                    )
+                    Feed.update (Session.cred model.session) subMsg feed
+                        |> Step.within (\newFeed -> { model | feed = Loaded newFeed }) GotFeedMsg
 
                 Loading ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
                 LoadingSlowly ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
                 Failed ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         GotTimeZone tz ->
-            ( { model | timeZone = tz }, Cmd.none )
+            Step.to { model | timeZone = tz }
 
         GotSession session ->
-            ( { model | session = session }, Cmd.none )
+            Step.to { model | session = session }
 
         PassedSlowLoadThreshold ->
             let
@@ -326,7 +317,7 @@ update msg model =
                         other ->
                             other
             in
-            ( { model | feed = feed, tags = tags }, Cmd.none )
+            Step.to { model | feed = feed, tags = tags }
 
 
 

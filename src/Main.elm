@@ -19,11 +19,13 @@ import Page.Register as Register
 import Page.Settings as Settings
 import Route exposing (Route)
 import Session exposing (Session)
+import Step exposing (Step)
 import Task
 import Time
 import Url exposing (Url)
 import Username exposing (Username)
 import Viewer exposing (Viewer)
+
 
 
 -- NOTE: Based on discussions around how asset management features
@@ -202,11 +204,11 @@ changeRouteTo maybeRoute model =
                 |> updateWith Article GotArticleMsg model
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg x
 update msg model =
     case ( msg, model ) of
         ( Ignored, _ ) ->
-            ( model, Cmd.none )
+            Step.stay
 
         ( ClickedLink urlRequest, _ ) ->
             case urlRequest of
@@ -221,60 +223,60 @@ update msg model =
                             -- fragment-based routing, this entire
                             -- `case url.fragment of` expression this comment
                             -- is inside would be unnecessary.
-                            ( model, Cmd.none )
+                            Step.stay
 
                         Just _ ->
-                            ( model
-                            , Nav.pushUrl (Session.navKey (toSession model)) (Url.toString url)
-                            )
+                            Step.to model
+                                |> Step.command
+                                    (Nav.pushUrl (Session.navKey (toSession model)) (Url.toString url))
 
                 Browser.External href ->
-                    ( model
-                    , Nav.load href
-                    )
+                    Step.to model
+                        |> Step.command (Nav.load href)
 
         ( ChangedUrl url, _ ) ->
             changeRouteTo (Route.fromUrl url) model
+                |> Step.fromUpdate
 
         ( ChangedRoute route, _ ) ->
             changeRouteTo route model
+                |> Step.fromUpdate
 
         ( GotSettingsMsg subMsg, Settings settings ) ->
             Settings.update subMsg settings
-                |> updateWith Settings GotSettingsMsg model
+                |> Step.within Settings GotSettingsMsg
 
         ( GotLoginMsg subMsg, Login login ) ->
             Login.update subMsg login
-                |> updateWith Login GotLoginMsg model
+                |> Step.within Login GotLoginMsg
 
         ( GotRegisterMsg subMsg, Register register ) ->
             Register.update subMsg register
-                |> updateWith Register GotRegisterMsg model
+                |> Step.within Register GotRegisterMsg
 
         ( GotHomeMsg subMsg, Home home ) ->
             Home.update subMsg home
-                |> updateWith Home GotHomeMsg model
+                |> Step.within Home GotHomeMsg
 
         ( GotProfileMsg subMsg, Profile username profile ) ->
             Profile.update subMsg profile
-                |> updateWith (Profile username) GotProfileMsg model
+                |> Step.within (Profile username) GotProfileMsg
 
         ( GotArticleMsg subMsg, Article article ) ->
             Article.update subMsg article
-                |> updateWith Article GotArticleMsg model
+                |> Step.within Article GotArticleMsg
 
         ( GotEditorMsg subMsg, Editor slug editor ) ->
             Editor.update subMsg editor
-                |> updateWith (Editor slug) GotEditorMsg model
+                |> Step.within (Editor slug) GotEditorMsg
 
         ( GotSession session, Redirect _ ) ->
-            ( Redirect session
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to (Redirect session)
+                |> Step.command (Route.replaceUrl (Session.navKey session) Route.Home)
 
         ( _, _ ) ->
             -- Disregard messages that arrived for the wrong page.
-            ( model, Cmd.none )
+            Step.stay
 
 
 updateWith : (subModel -> Model) -> (subMsg -> Msg) -> Model -> ( subModel, Cmd subMsg ) -> ( Model, Cmd Msg )
@@ -330,6 +332,6 @@ main =
         , onUrlChange = ChangedUrl
         , onUrlRequest = ClickedLink
         , subscriptions = subscriptions
-        , update = update
+        , update = Step.asUpdateFunction update
         , view = view
         }

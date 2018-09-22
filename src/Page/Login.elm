@@ -14,6 +14,7 @@ import Json.Decode.Pipeline exposing (optional)
 import Json.Encode as Encode
 import Route exposing (Route)
 import Session exposing (Session)
+import Step exposing (Step)
 import Viewer exposing (Viewer)
 
 
@@ -156,20 +157,18 @@ type Msg
     | GotSession Session
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         SubmittedForm ->
             case validate model.form of
                 Ok validForm ->
-                    ( { model | problems = [] }
-                    , Http.send CompletedLogin (login validForm)
-                    )
+                    Step.to { model | problems = [] }
+                        |> Step.command
+                            (Http.send CompletedLogin (login validForm))
 
                 Err problems ->
-                    ( { model | problems = problems }
-                    , Cmd.none
-                    )
+                    Step.to { model | problems = problems }
 
         EnteredEmail email ->
             updateForm (\form -> { form | email = email }) model
@@ -183,27 +182,25 @@ update msg model =
                     Api.decodeErrors error
                         |> List.map ServerError
             in
-            ( { model | problems = List.append model.problems serverErrors }
-            , Cmd.none
-            )
+            Step.to { model | problems = List.append model.problems serverErrors }
 
         CompletedLogin (Ok viewer) ->
-            ( model
-            , Viewer.store viewer
-            )
+            Step.to model
+                |> Step.command
+                    (Viewer.store viewer)
 
         GotSession session ->
-            ( { model | session = session }
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to { model | session = session }
+                |> Step.command
+                    (Route.replaceUrl (Session.navKey session) Route.Home)
 
 
 {-| Helper function for `update`. Updates the form and returns Cmd.none.
 Useful for recording form fields!
 -}
-updateForm : (Form -> Form) -> Model -> ( Model, Cmd Msg )
+updateForm : (Form -> Form) -> Model -> Step Model msg a
 updateForm transform model =
-    ( { model | form = transform model.form }, Cmd.none )
+    Step.to { model | form = transform model.form }
 
 
 

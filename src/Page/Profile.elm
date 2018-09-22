@@ -19,6 +19,7 @@ import PaginatedList exposing (PaginatedList)
 import Profile exposing (Profile)
 import Route
 import Session exposing (Session)
+import Step exposing (Step)
 import Task exposing (Task)
 import Time
 import Url.Builder
@@ -321,89 +322,75 @@ type Msg
     | PassedSlowLoadThreshold
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Step Model Msg a
 update msg model =
     case msg of
         ClickedDismissErrors ->
-            ( { model | errors = [] }, Cmd.none )
+            Step.to { model | errors = [] }
 
         ClickedUnfollow cred followedAuthor ->
-            ( model
-            , Author.requestUnfollow followedAuthor cred
-                |> Http.send CompletedFollowChange
-            )
+            Step.to model
+                |> Step.command
+                    (Author.requestUnfollow followedAuthor cred
+                        |> Http.send CompletedFollowChange
+                    )
 
         ClickedFollow cred unfollowedAuthor ->
-            ( model
-            , Author.requestFollow unfollowedAuthor cred
-                |> Http.send CompletedFollowChange
-            )
+            Step.to model
+                |> Step.command
+                    (Author.requestFollow unfollowedAuthor cred
+                        |> Http.send CompletedFollowChange
+                    )
 
         ClickedTab tab ->
-            ( { model | feedTab = tab }
-            , fetchFeed model.session tab (currentUsername model) 1
-            )
+            Step.to { model | feedTab = tab }
+                |> Step.command (fetchFeed model.session tab (currentUsername model) 1)
 
         ClickedFeedPage page ->
-            ( { model | feedPage = page }
-            , fetchFeed model.session model.feedTab (currentUsername model) page
-            )
+            Step.to { model | feedPage = page }
+                |> Step.command (fetchFeed model.session model.feedTab (currentUsername model) page)
 
         CompletedFollowChange (Ok newAuthor) ->
-            ( { model | author = Loaded newAuthor }
-            , Cmd.none
-            )
+            Step.to { model | author = Loaded newAuthor }
 
         CompletedFollowChange (Err error) ->
-            ( model
-            , Log.error
-            )
+            Step.to model |> Step.command Log.error
 
         CompletedAuthorLoad (Ok author) ->
-            ( { model | author = Loaded author }, Cmd.none )
+            Step.to { model | author = Loaded author }
 
         CompletedAuthorLoad (Err ( username, err )) ->
-            ( { model | author = Failed username }
-            , Log.error
-            )
+            Step.to { model | author = Failed username }
+                |> Step.command Log.error
 
         CompletedFeedLoad (Ok feed) ->
-            ( { model | feed = Loaded feed }
-            , Cmd.none
-            )
+            Step.to { model | feed = Loaded feed }
 
         CompletedFeedLoad (Err ( username, err )) ->
-            ( { model | feed = Failed username }
-            , Log.error
-            )
+            Step.to { model | feed = Failed username }
+                |> Step.command Log.error
 
         GotFeedMsg subMsg ->
             case model.feed of
                 Loaded feed ->
-                    let
-                        ( newFeed, subCmd ) =
-                            Feed.update (Session.cred model.session) subMsg feed
-                    in
-                    ( { model | feed = Loaded newFeed }
-                    , Cmd.map GotFeedMsg subCmd
-                    )
+                    Feed.update (Session.cred model.session) subMsg feed
+                        |> Step.within (\newFeed -> { model | feed = Loaded newFeed }) GotFeedMsg
 
                 Loading _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
                 LoadingSlowly _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
                 Failed _ ->
-                    ( model, Log.error )
+                    Step.to model |> Step.command Log.error
 
         GotTimeZone tz ->
-            ( { model | timeZone = tz }, Cmd.none )
+            Step.to { model | timeZone = tz }
 
         GotSession session ->
-            ( { model | session = session }
-            , Route.replaceUrl (Session.navKey session) Route.Home
-            )
+            Step.to { model | session = session }
+                |> Step.command (Route.replaceUrl (Session.navKey session) Route.Home)
 
         PassedSlowLoadThreshold ->
             let
@@ -417,7 +404,7 @@ update msg model =
                         other ->
                             other
             in
-            ( { model | feed = feed }, Cmd.none )
+            Step.to { model | feed = feed }
 
 
 
